@@ -55,6 +55,7 @@ func New(cfgFile string, cfg *config.Config) (*Server, error) {
 		Topic:        cfg.KafkaTopic,
 		RequiredAcks: cfg.KafkaRequiredAcks,
 		Balancer:     cfg.KafkaBalancer,
+		WriteTimeout: cfg.KafkaWriteTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kafka writer init: %w", err)
@@ -135,6 +136,7 @@ func (s *Server) Reload() error {
 			Topic:        newCfg.KafkaTopic,
 			RequiredAcks: newCfg.KafkaRequiredAcks,
 			Balancer:     newCfg.KafkaBalancer,
+			WriteTimeout: newCfg.KafkaWriteTimeout,
 		})
 		if err != nil {
 			return fmt.Errorf("rebuild writer: %w", err)

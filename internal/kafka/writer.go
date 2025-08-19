@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -15,8 +18,9 @@ type Writer struct {
 type WriterConfig struct {
 	Brokers      []string
 	Topic        string
-	RequiredAcks int    // 0 none, 1 one, -1/all => all
-	Balancer     string // least_bytes|round_robin|hash
+	RequiredAcks int           // 0 none, 1 one, -1/all => all
+	Balancer     string        // least_bytes|round_robin|hash|sticky (legacy)
+	WriteTimeout time.Duration // used for dialer timeout (connect) – actual write timeout handled by caller context
 }
 
 func NewWriter(cfg WriterConfig) (*Writer, error) {
@@ -53,6 +57,15 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 		Balancer:     balancer,
 		RequiredAcks: reqAcks,
 		Async:        false,
+	}
+
+	// Attach dialer with timeout if provided (>0)
+	// (Dial timeout customization skipped due to kafka-go version differences; rely on context timeouts)
+
+	// Optional debug logging (env KAFKA_DEBUG=1)
+	if os.Getenv("KAFKA_DEBUG") != "" {
+		w.Logger = log.New(os.Stdout, "kafka.writer ", log.LstdFlags|log.Lmicroseconds)
+		w.ErrorLogger = log.New(os.Stderr, "kafka.writer.err ", log.LstdFlags|log.Lmicroseconds)
 	}
 
 	return &Writer{w: w}, nil

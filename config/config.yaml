@@ -1,16 +1,21 @@
 # Example runtime config for alloy-distributor
 kafka_brokers:
-  - kafka1:9092
-  - kafka2:9092
-  - kafka3:9092
-kafka_topic: logs_raw
+  - localhost:19092
+  - localhost:19093
+  - localhost:19094
+  # - localhost:9092 # kind port-forward cluster
+  # - kafka1:9092
+  # - kafka2:9092
+  # - kafka3:9092
+# kafka_topic: logs_raw_loki_producer
+kafka_topic: logs-v1
 kafka_required_acks: 1
 kafka_balancer: sticky
 kafka_write_timeout: 10s
 
 max_body_bytes: 5242880
 allow_empty_tenant: false
-default_tenant: anonymous
+default_tenant: kind
 metrics_enable_tenant_label: false
 
 health_error_rate_threshold: 0.05
