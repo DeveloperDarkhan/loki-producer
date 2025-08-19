@@ -1,0 +1,80 @@
+groups:
+- name: pulse-loki-recordings
+  interval: 30s
+  rules:
+  - record: pulse_loki:requests_total:rate5m
+    expr: sum(rate(pulse_loki_requests_total[5m]))
+  - record: pulse_loki:success_rate5m
+    expr: sum(rate(pulse_loki_requests_total{result="success"}[5m])) / sum(rate(pulse_loki_requests_total[5m]))
+  - record: pulse_loki:kafka_error_rate5m
+    expr: sum(rate(pulse_loki_requests_total{result="kafka_error"}[5m])) / sum(rate(pulse_loki_requests_total[5m]))
+  - record: pulse_loki:kafka_write_p95_seconds
+    expr: histogram_quantile(0.95, sum(rate(pulse_loki_kafka_write_duration_seconds_bucket[5m])) by (le))
+  - record: pulse_loki:kafka_write_p99_seconds
+    expr: histogram_quantile(0.99, sum(rate(pulse_loki_kafka_write_duration_seconds_bucket[5m])) by (le))
+
+- name: pulse-loki-alerts
+  interval: 30s
+  rules:
+  - alert: PulseLokiNoTraffic1m
+    expr: sum(rate(pulse_loki_requests_total[1m])) == 0
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "No traffic for 2m"
+      description: "Upstream Alloy may be down or disconnected."
+
+  - alert: PulseLokiKafkaErrorSpike
+    expr: sum(rate(pulse_loki_requests_total{result="kafka_error"}[5m])) / sum(rate(pulse_loki_requests_total[5m])) > 0.05
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Kafka error rate >5% (5m)"
+      description: "Error rate {{ $value | printf \"%.2f\" }}"
+
+  - alert: PulseLokiKafkaLatencyP95High
+    expr: histogram_quantile(0.95, sum(rate(pulse_loki_kafka_write_duration_seconds_bucket[5m])) by (le)) > 0.2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "p95 Kafka write latency > 200ms"
+      description: "p95 {{ $value | printf \"%.3f\" }}s"
+
+  - alert: PulseLokiHealthDown
+    expr: pulse_loki_health_up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "pulse-loki degraded"
+      description: "health_up=0 >1m"
+
+  - alert: PulseLokiSLADegradation
+    expr: ( sum(rate(pulse_loki_requests_total{result="success"}[15m])) / sum(rate(pulse_loki_requests_total[15m])) ) < 0.995
+    for: 15m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SLA success ratio < 99.5% (15m)"
+      description: "ratio={{ $value | printf \"%.4f\" }}"
+
+  - alert: PulseLokiConsecutiveKafkaErrors
+    expr: pulse_loki_kafka_consecutive_error_count > 10
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High consecutive Kafka errors"
+      description: "consecutive={{ $value }}"
+
+  - alert: PulseLokiTrafficDrop
+    expr: sum(rate(pulse_loki_requests_total[10m])) < (0.3 * sum(rate(pulse_loki_requests_total[1h])))
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Traffic dropped vs 1h baseline"
+      description: "10m < 30% of 1h baseline"

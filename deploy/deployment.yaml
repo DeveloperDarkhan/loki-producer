@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alloy-distributor
+  labels:
+    app: alloy-distributor
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: alloy-distributor
+  template:
+    metadata:
+      labels:
+        app: alloy-distributor
+    spec:
+      containers:
+      - name: alloy-distributor
+        image: your-registry/alloy-distributor:1.0.0
+        imagePullPolicy: IfNotPresent
+        args:
+          - "-config.file=/config/config.yaml"
+        ports:
+        - containerPort: 3101
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3101
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 3101
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 512Mi
+        securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+      volumes:
+      - name: config
+        configMap:
+          name: alloy-distributor-config
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: alloy-distributor-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: alloy-distributor
