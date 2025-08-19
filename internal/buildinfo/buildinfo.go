@@ -8,8 +8,9 @@ import (
 	"log"
 	"runtime"
 
+	// Updated to local module path
+	"github.com/DeveloperDarkhan/loki-producer/internal/config"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/your-org/alloy-distributor/internal/config"
 )
 
 var (
@@ -32,10 +33,10 @@ func LogStartup(cfg config.Config, raw []byte) {
 	hash := sha256.Sum256(raw)
 	rawHash := hex.EncodeToString(hash[:8])
 	type logged struct {
-		Version   string        `json:"version"`
-		Commit    string        `json:"commit"`
-		Date      string        `json:"date"`
-		ConfigRef string        `json:"config_hash"`
+		Version   string             `json:"version"`
+		Commit    string             `json:"commit"`
+		Date      string             `json:"date"`
+		ConfigRef string             `json:"config_hash"`
 		Config    config.RuntimeView `json:"config_effective"`
 	}
 	l := logged{

@@ -10,8 +10,8 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/your-org/simple-distributor/internal/config"
-	"github.com/your-org/simple-distributor/internal/model"
+	"github.com/DeveloperDarkhan/loki-producer/internal/config"
+	"github.com/DeveloperDarkhan/loki-producer/internal/model"
 )
 
 var (
@@ -21,8 +21,8 @@ var (
 type Validator struct {
 	lim config.Limits
 
-	rejectOldMaxAge    time.Duration
-	creationGrace      time.Duration
+	rejectOldMaxAge time.Duration
+	creationGrace   time.Duration
 }
 
 func New(lim config.Limits) *Validator {

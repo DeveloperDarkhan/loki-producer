@@ -9,17 +9,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/your-org/alloy-distributor/internal/buildinfo"
-	"github.com/your-org/alloy-distributor/internal/config"
-	"github.com/your-org/alloy-distributor/internal/server"
+	// Updated to local module path
+	"github.com/DeveloperDarkhan/loki-producer/internal/buildinfo"
+	"github.com/DeveloperDarkhan/loki-producer/internal/config"
+	"github.com/DeveloperDarkhan/loki-producer/internal/server"
 )
 
 var (
-	configFile = flag.String("config.file", "/config/config.yaml", "Path to config file (mounted via ConfigMap)")
+	configFile    = flag.String("config.file", "/config/config.yaml", "Path to config file (mounted via ConfigMap)")
+	listBalancers = flag.Bool("list-balancers", false, "Print supported Kafka balancers and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	if *listBalancers {
+		for _, b := range config.SupportedBalancers() {
+			println(b)
+		}
+		return
+	}
 
 	cfg, rawBytes, err := config.LoadFromFile(*configFile)
 	if err != nil {

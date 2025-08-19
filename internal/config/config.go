@@ -15,17 +15,17 @@ import (
 
 type Config struct {
 	// Immutable (changing requires Kafka writer rebuild)
-	KafkaBrokers      []string `yaml:"kafka_brokers"`
-	KafkaTopic        string   `yaml:"kafka_topic"`
-	KafkaRequiredAcks int      `yaml:"kafka_required_acks"`
-	KafkaBalancer     string   `yaml:"kafka_balancer"` // sticky|round_robin|hash
+	KafkaBrokers      []string      `yaml:"kafka_brokers"`
+	KafkaTopic        string        `yaml:"kafka_topic"`
+	KafkaRequiredAcks int           `yaml:"kafka_required_acks"`
+	KafkaBalancer     string        `yaml:"kafka_balancer"` // sticky|round_robin|hash
 	KafkaWriteTimeout time.Duration `yaml:"kafka_write_timeout"`
 
 	// Mutable
-	MaxBodyBytes      int64   `yaml:"max_body_bytes"`
-	AllowEmptyTenant  bool    `yaml:"allow_empty_tenant"`
-	DefaultTenant     string  `yaml:"default_tenant"`
-	MetricsEnableTenantLabel bool `yaml:"metrics_enable_tenant_label"`
+	MaxBodyBytes             int64  `yaml:"max_body_bytes"`
+	AllowEmptyTenant         bool   `yaml:"allow_empty_tenant"`
+	DefaultTenant            string `yaml:"default_tenant"`
+	MetricsEnableTenantLabel bool   `yaml:"metrics_enable_tenant_label"`
 
 	HealthErrorRateThreshold        float64       `yaml:"health_error_rate_threshold"`
 	HealthConsecutiveErrorThreshold int           `yaml:"health_consecutive_error_threshold"`
@@ -38,9 +38,9 @@ type Config struct {
 	RateLimitPerTenantRPS   float64 `yaml:"rate_limit_per_tenant_rps"`
 	RateLimitPerTenantBurst int     `yaml:"rate_limit_per_tenant_burst"`
 
-	LogLevel   string `yaml:"log_level"` // info|debug
-	Quiet      bool   `yaml:"quiet"`
-	Port       string `yaml:"port"`
+	LogLevel string `yaml:"log_level"` // info|debug
+	Quiet    bool   `yaml:"quiet"`
+	Port     string `yaml:"port"`
 }
 
 var defaultConfig = Config{
@@ -79,10 +79,34 @@ func Parse(data []byte) (*Config, error) {
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("yaml unmarshal: %w", err)
 	}
+	// Normalize legacy/alternative balancer names
+	c.KafkaBalancer = normalizeBalancer(c.KafkaBalancer)
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// normalizeBalancer maps legacy or alternative names to canonical values
+func normalizeBalancer(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "sticky":
+		return "sticky"
+	case "round_robin", "roundrobin", "round-robin":
+		return "round_robin"
+	case "hash":
+		return "hash"
+	case "least", "least_bytes", "least-bytes":
+		// legacy alias — map to sticky (implementation treats sticky as LeastBytes)
+		return "sticky"
+	default:
+		return v
+	}
+}
+
+// SupportedBalancers returns canonical balancer names supported by the service.
+func SupportedBalancers() []string {
+	return []string{"sticky", "round_robin", "hash"}
 }
 
 func (c *Config) Validate() error {
@@ -125,21 +149,21 @@ func (c *Config) Validate() error {
 
 // ImmutableSubset returns a struct containing only immutable config fields.
 type ImmutableSubset struct {
-	KafkaBrokers      []string
-	KafkaTopic        string
-	KafkaRequiredAcks int
-	KafkaBalancer     string
-	KafkaWriteTimeout time.Duration
+	KafkaBrokers             []string
+	KafkaTopic               string
+	KafkaRequiredAcks        int
+	KafkaBalancer            string
+	KafkaWriteTimeout        time.Duration
 	MetricsEnableTenantLabel bool
 }
 
 func (c *Config) ImmutableSubset() ImmutableSubset {
 	return ImmutableSubset{
-		KafkaBrokers:      append([]string{}, c.KafkaBrokers...),
-		KafkaTopic:        c.KafkaTopic,
-		KafkaRequiredAcks: c.KafkaRequiredAcks,
-		KafkaBalancer:     c.KafkaBalancer,
-		KafkaWriteTimeout: c.KafkaWriteTimeout,
+		KafkaBrokers:             append([]string{}, c.KafkaBrokers...),
+		KafkaTopic:               c.KafkaTopic,
+		KafkaRequiredAcks:        c.KafkaRequiredAcks,
+		KafkaBalancer:            c.KafkaBalancer,
+		KafkaWriteTimeout:        c.KafkaWriteTimeout,
 		MetricsEnableTenantLabel: c.MetricsEnableTenantLabel,
 	}
 }
@@ -156,10 +180,10 @@ type RuntimeView struct {
 	KafkaBalancer     string   `json:"kafka_balancer"`
 	KafkaWriteTimeout string   `json:"kafka_write_timeout"`
 
-	MaxBodyBytes      int64   `json:"max_body_bytes"`
-	AllowEmptyTenant  bool    `json:"allow_empty_tenant"`
-	DefaultTenant     string  `json:"default_tenant"`
-	MetricsEnableTenantLabel bool `json:"metrics_enable_tenant_label"`
+	MaxBodyBytes             int64  `json:"max_body_bytes"`
+	AllowEmptyTenant         bool   `json:"allow_empty_tenant"`
+	DefaultTenant            string `json:"default_tenant"`
+	MetricsEnableTenantLabel bool   `json:"metrics_enable_tenant_label"`
 
 	HealthErrorRateThreshold        float64 `json:"health_error_rate_threshold"`
 	HealthConsecutiveErrorThreshold int     `json:"health_consecutive_error_threshold"`
@@ -185,9 +209,9 @@ func (c Config) RuntimeView() RuntimeView {
 		KafkaBalancer:     c.KafkaBalancer,
 		KafkaWriteTimeout: c.KafkaWriteTimeout.String(),
 
-		MaxBodyBytes:      c.MaxBodyBytes,
-		AllowEmptyTenant:  c.AllowEmptyTenant,
-		DefaultTenant:     c.DefaultTenant,
+		MaxBodyBytes:             c.MaxBodyBytes,
+		AllowEmptyTenant:         c.AllowEmptyTenant,
+		DefaultTenant:            c.DefaultTenant,
 		MetricsEnableTenantLabel: c.MetricsEnableTenantLabel,
 
 		HealthErrorRateThreshold:        c.HealthErrorRateThreshold,

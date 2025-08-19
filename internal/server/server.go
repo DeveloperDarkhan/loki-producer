@@ -9,34 +9,35 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	kafkago "github.com/segmentio/kafka-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	kafkago "github.com/segmentio/kafka-go"
+	"golang.org/x/time/rate"
 
-	"github.com/your-org/alloy-distributor/internal/config"
-	"github.com/your-org/alloy-distributor/internal/kafka"
-	"github.com/your-org/alloy-distributor/internal/metrics"
+	// Use local module path instead of old alloy-distributor path
+	"github.com/DeveloperDarkhan/loki-producer/internal/config"
+	"github.com/DeveloperDarkhan/loki-producer/internal/kafka"
+	"github.com/DeveloperDarkhan/loki-producer/internal/metrics"
 )
 
 type Server struct {
 	cfgFile string
 
-	mu          sync.RWMutex
-	cfg         *config.Config
-	httpServer  *http.Server
-	kWriter     *kafka.Writer
-	metrics     *metrics.Registry
-	stopHealth  chan struct{}
-	reloadCh    chan struct{}
+	mu         sync.RWMutex
+	cfg        *config.Config
+	httpServer *http.Server
+	kWriter    *kafka.Writer
+	metrics    *metrics.Registry
+	stopHealth chan struct{}
+	reloadCh   chan struct{}
 
 	// health counters
-	prevTotal   uint64
-	prevSuccess uint64
-	prevErrors  uint64
+	prevTotal         uint64
+	prevSuccess       uint64
+	prevErrors        uint64
 	consecutiveErrors int
 
 	// rate limiting
@@ -62,12 +63,12 @@ func New(cfgFile string, cfg *config.Config) (*Server, error) {
 	mreg := metrics.NewRegistry(cfg.MetricsEnableTenantLabel, cfg.SLAGaugeEnable)
 
 	s := &Server{
-		cfgFile:     cfgFile,
-		cfg:         cfg,
-		kWriter:     writer,
-		metrics:     mreg,
-		stopHealth:  make(chan struct{}),
-		reloadCh:    make(chan struct{}, 1),
+		cfgFile:    cfgFile,
+		cfg:        cfg,
+		kWriter:    writer,
+		metrics:    mreg,
+		stopHealth: make(chan struct{}),
+		reloadCh:   make(chan struct{}, 1),
 	}
 
 	s.buildRateLimitersLocked()

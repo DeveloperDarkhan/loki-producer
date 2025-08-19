@@ -1,3 +1,4 @@
+| Kafka | sticky/hash/round_robin балансеры (canonical names: sticky, round_robin, hash) — legacy aliases (least_bytes, sticky) поддерживаются, acks настраиваемы |
 # alloy-distributor (pulse-loki-produce metrics, ConfigMap + Hot Reload)
 
 Лёгкая прослойка между Alloy / Loki Exporter и децентрализованными Loki кластерами.
@@ -110,7 +111,7 @@ sum(rate(pulse_loki_produce_requests_total{result="kafka_error"}[5m])) / sum(rat
 ## Пример запуска
 
 ```
-go build -ldflags "-X github.com/your-org/alloy-distributor/internal/buildinfo.Version=1.1.0 -X github.com/your-org/alloy-distributor/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/your-org/alloy-distributor/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o alloy-distributor ./cmd/alloy-distributor
+go build -ldflags "-X github.com/DeveloperDarkhan/loki-producer/internal/buildinfo.Version=1.1.0 -X github.com/DeveloperDarkhan/loki-producer/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/DeveloperDarkhan/loki-producer/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o alloy-distributor ./cmd/alloy-distributor
 ./alloy-distributor -config.file=./config/config.yaml
 ```
 

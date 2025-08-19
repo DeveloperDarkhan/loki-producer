@@ -1,3 +1,8 @@
+3. Быстрый старт
+3. Быстрый старт
+
+Балансеры Kafka (поддерживаемые): sticky, round_robin, hash (legacy: least_bytes будет мапиться на sticky)
+
 # alloy-distributor (pulse-loki-produce) — Руководство по Погружению в Код
 
 Это практический роадмап для поэтапного изучения проекта `alloy-distributor`.  
@@ -73,7 +78,7 @@ CODE-ROADMAP.md              # этот документ
 2. Скопируй `config/config.yaml`, поправь `kafka_brokers`.
 3. Собери:
    ```
-   go build -ldflags "-X github.com/your-org/alloy-distributor/internal/buildinfo.Version=dev-local" -o alloy-distributor ./cmd/alloy-distributor
+   go build -ldflags "-X github.com/DeveloperDarkhan/loki-producer/internal/buildinfo.Version=sre-local" -o alloy-distributor ./cmd/alloy-distributor
    ./alloy-distributor -config.file=./config/config.yaml
    ```
 4. Проверка:

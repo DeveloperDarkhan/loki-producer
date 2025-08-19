@@ -4,45 +4,41 @@ import (
 	"context"
 	"flag"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/your-org/simple-distributor/internal/server"
+	"github.com/DeveloperDarkhan/loki-producer/internal/config"
+	"github.com/DeveloperDarkhan/loki-producer/internal/server"
 )
 
 var (
-	httpAddr     = flag.String("http.listen", ":3100", "Listen address")
-	maxBodyBytes = flag.Int64("max.body.bytes", 50<<20, "Max request body size (compressed)")
-	quiet        = flag.Bool("quiet", false, "Do not log each push (only metrics/errors)")
+	configFile = flag.String("config.file", "./config/config.yaml", "Path to config file")
 )
 
 func main() {
 	flag.Parse()
 
-	s := server.New(server.Config{
-		Addr:         *httpAddr,
-		MaxBodyBytes: *maxBodyBytes,
-		Quiet:        *quiet,
-	})
-
+	cfg, _, err := config.LoadFromFile(*configFile)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	srv, err := server.New(*configFile, cfg)
+	if err != nil {
+		log.Fatalf("failed to init server: %v", err)
+	}
 	go func() {
-		log.Printf("listening on %s", *httpAddr)
-		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+		if err := srv.Start(); err != nil {
+			log.Fatalf("server exited: %v", err)
 		}
 	}()
 
-	// Graceful shutdown.
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-	log.Println("shutdown signal received")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-sigCh
+	log.Printf("shutdown signal: %s", sig)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.Shutdown(ctx); err != nil {
-		log.Printf("shutdown error: %v", err)
-	}
+	_ = srv.Stop(ctx)
 }
