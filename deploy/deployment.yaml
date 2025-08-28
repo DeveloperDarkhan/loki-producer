@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: loki-producer
-  namespace: logging
+  namespace: project-logging
   labels:
     app: loki-producer
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: loki-producer
-        image: dockerdarkhan/loki-producer:v1.0.1
+        image: dockerdarkhan/loki-producer:v1.2.0
         imagePullPolicy: IfNotPresent
         args:
           - "-config.file=/config/config.yaml"
@@ -25,10 +25,18 @@ spec:
         - containerPort: 3101
         env:
         - name: KAFKA_DEBUG
-          value: "0" # set to "1" to enable kafka writer debug logs
+          value: "1" # set to "1" to enable kafka writer debug logs
+        - name: KAFKA_SASL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: loki-user
+              key: password
         volumeMounts:
         - name: config
           mountPath: /config
+        # - name: kafka-ca
+        #   mountPath: /etc/ssl/certs/kafka
+        #   readOnly: true
         readinessProbe:
           httpGet:
             path: /ready
@@ -53,12 +61,15 @@ spec:
       - name: config
         configMap:
           name: loki-producer-config
+  # - name: kafka-ca
+  #   secret:
+  #     secretName: loki-producer-kafka-ca
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: loki-producer-pdb
-  namespace: logging
+  namespace: project-logging
 spec:
   minAvailable: 2
   selector:

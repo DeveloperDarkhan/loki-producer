@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: loki-producer-canary
-  namespace: logging
+  namespace: project-logging
   labels:
     app: loki-producer-canary
 spec:

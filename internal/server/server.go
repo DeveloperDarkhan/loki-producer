@@ -51,11 +51,18 @@ type rateLimiterWrapper struct {
 
 func New(cfgFile string, cfg *config.Config) (*Server, error) {
 	writer, err := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:      cfg.KafkaBrokers,
-		Topic:        cfg.KafkaTopic,
-		RequiredAcks: cfg.KafkaRequiredAcks,
-		Balancer:     cfg.KafkaBalancer,
-		WriteTimeout: cfg.KafkaWriteTimeout,
+		Brokers:               cfg.KafkaBrokers,
+		Topic:                 cfg.KafkaTopic,
+		RequiredAcks:          cfg.KafkaRequiredAcks,
+		Balancer:              cfg.KafkaBalancer,
+		WriteTimeout:          cfg.KafkaWriteTimeout,
+		SASLEnabled:           cfg.KafkaSASLEnabled,
+		SASLMechanism:         cfg.KafkaSASLMechanism,
+		SASLUsername:          cfg.KafkaSASLUsername,
+		SASLPassword:          cfg.KafkaSASLPassword,
+		TLSEnabled:            cfg.KafkaTLSEnabled,
+		TLSInsecureSkipVerify: cfg.KafkaTLSInsecureSkipVerify,
+		TLSCAFile:             cfg.KafkaTLSCAFile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kafka writer init: %w", err)
@@ -96,6 +103,18 @@ func New(cfgFile string, cfg *config.Config) (*Server, error) {
 
 func (s *Server) Start() error {
 	log.Printf(`{"level":"info","msg":"listening","port":%q,"topic":%q,"brokers":%q}`, s.cfg.Port, s.cfg.KafkaTopic, strings.Join(s.cfg.KafkaBrokers, ","))
+	// Optional startup probe: try metadata or write tiny message
+	if s.cfg.KafkaProbeEnabled {
+		ctx, cancel := context.WithTimeout(context.Background(), s.cfg.KafkaProbeTimeout)
+		defer cancel()
+		probeErr := s.kafkaProbe(ctx)
+		if probeErr != nil {
+			if s.cfg.KafkaProbeRequired {
+				return fmt.Errorf("kafka startup probe failed: %w", probeErr)
+			}
+			log.Printf(`{"level":"warn","msg":"kafka probe failed (non-fatal)","error":%q}`, probeErr.Error())
+		}
+	}
 	go s.healthLoop()
 	return s.httpServer.ListenAndServe()
 }
@@ -132,11 +151,18 @@ func (s *Server) Reload() error {
 	if rebuildWriter {
 		log.Printf(`{"level":"info","msg":"immutable config changed - rebuilding kafka writer"}`)
 		newWriter, err := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:      newCfg.KafkaBrokers,
-			Topic:        newCfg.KafkaTopic,
-			RequiredAcks: newCfg.KafkaRequiredAcks,
-			Balancer:     newCfg.KafkaBalancer,
-			WriteTimeout: newCfg.KafkaWriteTimeout,
+			Brokers:               newCfg.KafkaBrokers,
+			Topic:                 newCfg.KafkaTopic,
+			RequiredAcks:          newCfg.KafkaRequiredAcks,
+			Balancer:              newCfg.KafkaBalancer,
+			WriteTimeout:          newCfg.KafkaWriteTimeout,
+			SASLEnabled:           newCfg.KafkaSASLEnabled,
+			SASLMechanism:         newCfg.KafkaSASLMechanism,
+			SASLUsername:          newCfg.KafkaSASLUsername,
+			SASLPassword:          newCfg.KafkaSASLPassword,
+			TLSEnabled:            newCfg.KafkaTLSEnabled,
+			TLSInsecureSkipVerify: newCfg.KafkaTLSInsecureSkipVerify,
+			TLSCAFile:             newCfg.KafkaTLSCAFile,
 		})
 		if err != nil {
 			return fmt.Errorf("rebuild writer: %w", err)
@@ -463,6 +489,52 @@ func (s *Server) isHealthy() bool {
 	// Simple read of gauge by internal state; we trust metrics.HealthUp
 	// (We could track a bool instead; for now assume if consecutiveErrors high or set gauge).
 	return s.metrics != nil
+}
+
+// kafkaProbe attempts to connect and optionally write a tiny test message.
+func (s *Server) kafkaProbe(ctx context.Context) error {
+	// 1) Network reachability: TCP dial to the first broker.
+	d := &net.Dialer{Timeout: s.cfg.KafkaProbeTimeout}
+	addr := s.cfg.KafkaBrokers[0]
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+	// Log success of dial
+	s.jsonLog("info", "kafka probe dial ok", map[string]any{"broker": addr})
+
+	// 2) Optional produce check (auth/ACL/topic end-to-end)
+	if !s.cfg.KafkaProbeWrite {
+		return nil
+	}
+
+	// Produce a tiny, clearly marked probe message.
+	headers := []kafkago.Header{
+		{Key: "X-Producer-Probe", Value: []byte("true")},
+		{Key: "X-Scope-OrgID", Value: []byte("_probe")},
+	}
+	msg := kafkago.Message{
+		Key:     nil, // set below for hash balancer
+		Value:   []byte("probe"),
+		Time:    time.Now(),
+		Headers: headers,
+	}
+	if s.cfg.KafkaBalancer == "hash" {
+		msg.Key = []byte("_probe")
+	}
+
+	wctx, cancel := context.WithTimeout(ctx, s.cfg.KafkaProbeTimeout)
+	defer cancel()
+	if err := s.kWriter.Write(wctx, msg); err != nil {
+		return err
+	}
+	// Log success of write
+	s.jsonLog("info", "kafka probe write ok", map[string]any{
+		"topic":      s.cfg.KafkaTopic,
+		"timeout_ms": s.cfg.KafkaProbeTimeout.Milliseconds(),
+	})
+	return nil
 }
 
 func classifyKafkaError(err error) string {
