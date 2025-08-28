@@ -1,27 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: alloy-distributor
+  name: loki-producer
+  namespace: logging
   labels:
-    app: alloy-distributor
+    app: loki-producer
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: alloy-distributor
+      app: loki-producer
   template:
     metadata:
       labels:
-        app: alloy-distributor
+        app: loki-producer
     spec:
       containers:
-      - name: alloy-distributor
-        image: your-registry/alloy-distributor:1.0.0
+      - name: loki-producer
+        image: dockerdarkhan/loki-producer:v1.0.1
         imagePullPolicy: IfNotPresent
         args:
           - "-config.file=/config/config.yaml"
         ports:
         - containerPort: 3101
+        env:
+        - name: KAFKA_DEBUG
+          value: "0" # set to "1" to enable kafka writer debug logs
         volumeMounts:
         - name: config
           mountPath: /config
@@ -48,14 +52,15 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: alloy-distributor-config
+          name: loki-producer-config
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: alloy-distributor-pdb
+  name: loki-producer-pdb
+  namespace: logging
 spec:
   minAvailable: 2
   selector:
     matchLabels:
-      app: alloy-distributor
+      app: loki-producer

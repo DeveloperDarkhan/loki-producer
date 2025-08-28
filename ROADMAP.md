@@ -1,6 +1,3 @@
-3. Быстрый старт
-3. Быстрый старт
-
 Балансеры Kafka (поддерживаемые): sticky, round_robin, hash (legacy: least_bytes будет мапиться на sticky)
 
 # alloy-distributor (pulse-loki-produce) — Руководство по Погружению в Код

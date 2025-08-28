@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loki-producer-canary
+  namespace: logging
+  labels:
+    app: loki-producer-canary
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: loki-producer-canary
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: canary
+        image: dockerdarkhan/loki-producer:v1.0.1
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/pulse-loki-canary"]
+        args:
+          - "-url=http://loki-producer:3101/loki/api/v1/push"
+          - "-tenant=canary"
+          - "-rps=200"
+          - "-concurrency=8"
+          - "-streams=1"
+          - "-lines=20"
+          - "-duration=1m"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        env:
+        - name: CANARY_LOG_LEVEL
+          value: info

@@ -1,14 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: alloy-distributor-config
+  name: loki-producer-config
+  namespace: logging
 data:
   config.yaml: |
     kafka_brokers:
-      - kafka1:9092
-      - kafka2:9092
-      - kafka3:9092
-    kafka_topic: logs_raw
+      - kafka-raft.brokers.svc.cluster.local:9092
+    kafka_topic: logs_raw_v1
     kafka_required_acks: 1
     kafka_balancer: sticky
     kafka_write_timeout: 10s

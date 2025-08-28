@@ -1,0 +1,17 @@
+# Exclude VCS and editor files
+.git
+.gitignore
+README.md
+**/*.md
+
+# Exclude build artifacts
+bin/
+/dist/
+/tmp/
+
+# Exclude local config overrides (if any)
+config/local*
+
+# Caches
+**/.DS_Store
+**/*.swp
