@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -509,14 +510,32 @@ func (s *Server) kafkaProbe(ctx context.Context) error {
 		return nil
 	}
 
-	// Produce a tiny, clearly marked probe message.
+	// Prepare producer identity
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		if hn, _ := os.Hostname(); hn != "" {
+			podName = hn
+		} else {
+			podName = "unknown"
+		}
+	}
+	ns := os.Getenv("POD_NAMESPACE")
+	if ns == "" {
+		ns = "default"
+	}
+	ts := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Produce a tiny, clearly marked probe message including timestamp and pod info.
 	headers := []kafkago.Header{
 		{Key: "X-Producer-Probe", Value: []byte("true")},
 		{Key: "X-Scope-OrgID", Value: []byte("_probe")},
+		{Key: "X-Producer-Ts", Value: []byte(ts)},
+		{Key: "X-Producer-Pod", Value: []byte(podName)},
+		{Key: "X-Producer-Namespace", Value: []byte(ns)},
 	}
 	msg := kafkago.Message{
 		Key:     nil, // set below for hash balancer
-		Value:   []byte("probe"),
+		Value:   []byte(fmt.Sprintf("%s probe pod=%s ns=%s", ts, podName, ns)),
 		Time:    time.Now(),
 		Headers: headers,
 	}
@@ -524,10 +543,26 @@ func (s *Server) kafkaProbe(ctx context.Context) error {
 		msg.Key = []byte("_probe")
 	}
 
+	// Log attempt details before producing, to make target topic/config visible in startup logs
+	var headerKeys []string
+	for _, h := range headers {
+		headerKeys = append(headerKeys, h.Key)
+	}
+	s.jsonLog("info", "kafka probe write attempt", map[string]any{
+		"topic":            s.cfg.KafkaTopic,
+		"headers":          headerKeys,
+		"balancer":         s.cfg.KafkaBalancer,
+		"required_acks":    s.cfg.KafkaRequiredAcks,
+		"sasl_enabled":     s.cfg.KafkaSASLEnabled,
+		"sasl_mechanism":   s.cfg.KafkaSASLMechanism,
+		"tls_enabled":      s.cfg.KafkaTLSEnabled,
+		"probe_timeout_ms": s.cfg.KafkaProbeTimeout.Milliseconds(),
+	})
+
 	wctx, cancel := context.WithTimeout(ctx, s.cfg.KafkaProbeTimeout)
 	defer cancel()
 	if err := s.kWriter.Write(wctx, msg); err != nil {
-		return err
+		return fmt.Errorf("probe write to topic %q failed: %w", s.cfg.KafkaTopic, err)
 	}
 	// Log success of write
 	s.jsonLog("info", "kafka probe write ok", map[string]any{

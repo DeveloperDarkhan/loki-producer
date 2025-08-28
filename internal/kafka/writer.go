@@ -66,15 +66,10 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 		reqAcks = kafka.RequireAll
 	}
 
-	// Dialer with optional TLS/SASL
-	dialer := &kafka.Dialer{
-		Timeout:   cfg.WriteTimeout,
-		DualStack: true,
-	}
-
-	// TLS
+	// Build TLS config (optional)
+	var tlsCfg *tls.Config
 	if cfg.TLSEnabled {
-		tlsCfg := &tls.Config{InsecureSkipVerify: cfg.TLSInsecureSkipVerify}
+		tc := &tls.Config{InsecureSkipVerify: cfg.TLSInsecureSkipVerify}
 		if strings.TrimSpace(cfg.TLSCAFile) != "" {
 			caPEM, err := os.ReadFile(cfg.TLSCAFile)
 			if err != nil {
@@ -84,12 +79,13 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 			if !pool.AppendCertsFromPEM(caPEM) {
 				return nil, errors.New("failed to append CA certs")
 			}
-			tlsCfg.RootCAs = pool
+			tc.RootCAs = pool
 		}
-		dialer.TLS = tlsCfg
+		tlsCfg = tc
 	}
 
-	// SASL SCRAM
+	// SASL SCRAM (optional)
+	var saslMech sasl.Mechanism
 	if cfg.SASLEnabled {
 		user := strings.TrimSpace(cfg.SASLUsername)
 		pass := cfg.SASLPassword
@@ -100,37 +96,30 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 			return nil, errors.New("SASL enabled but username/password not provided")
 		}
 		mechName := strings.ToLower(strings.TrimSpace(cfg.SASLMechanism))
-		var mech sasl.Mechanism
 		switch mechName {
 		case "scram-sha-512":
 			m, err := scram.Mechanism(scram.SHA512, user, pass)
 			if err != nil {
 				return nil, fmt.Errorf("scram512 mech: %w", err)
 			}
-			mech = m
+			saslMech = m
 		case "scram-sha-256":
 			m, err := scram.Mechanism(scram.SHA256, user, pass)
 			if err != nil {
 				return nil, fmt.Errorf("scram256 mech: %w", err)
 			}
-			mech = m
+			saslMech = m
 		default:
 			return nil, fmt.Errorf("unsupported SASL mechanism: %s", cfg.SASLMechanism)
 		}
-		dialer.SASLMechanism = mech
 	}
 
-	// Wrap dialer to match Transport.Dial signature (net.Conn)
+	// Proper Transport: raw net.Dialer (kafka-go will perform TLS/SASL itself)
+	netDialer := &net.Dialer{Timeout: cfg.WriteTimeout, DualStack: true}
 	tr := &kafka.Transport{
-		TLS:  dialer.TLS,
-		SASL: dialer.SASLMechanism,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			c, err := dialer.DialContext(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
-		},
+		TLS:  tlsCfg,
+		SASL: saslMech,
+		Dial: netDialer.DialContext,
 	}
 
 	w := &kafka.Writer{
@@ -146,9 +135,13 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 	// (Dial timeout customization skipped due to kafka-go version differences; rely on context timeouts)
 
 	// Optional debug logging (env KAFKA_DEBUG=1)
-	if os.Getenv("KAFKA_DEBUG") != "" {
+	if func() bool {
+		v := strings.TrimSpace(os.Getenv("KAFKA_DEBUG"))
+		return v == "1" || strings.EqualFold(v, "true")
+	}() {
 		w.Logger = log.New(os.Stdout, "kafka.writer ", log.LstdFlags|log.Lmicroseconds)
 		w.ErrorLogger = log.New(os.Stderr, "kafka.writer.err ", log.LstdFlags|log.Lmicroseconds)
+		log.Printf("kafka debug enabled: topic=%s brokers=%s acks=%d balancer=%T tls=%t sasl=%t", cfg.Topic, strings.Join(cfg.Brokers, ","), cfg.RequiredAcks, balancer, cfg.TLSEnabled, cfg.SASLEnabled)
 	}
 
 	return &Writer{w: w}, nil
