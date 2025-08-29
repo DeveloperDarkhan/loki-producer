@@ -34,6 +34,9 @@
 | kafka_required_acks | -1/1/0 | Иммутабельно |
 | kafka_balancer | sticky/hash/round_robin | Иммутабельно |
 | kafka_write_timeout | Таймаут записи | Иммутабельно (для простоты) |
+| kafka_batch_timeout | Интервал флеша батча | Иммутабельно |
+| kafka_batch_size | Максимум сообщений в батче | Иммутабельно |
+| kafka_batch_bytes | Максимум байт в батче | Иммутабельно |
 | max_body_bytes | Лимит входящего тела | Динамически |
 | allow_empty_tenant | Разрешить пустой tenant | Динамически |
 | default_tenant | Tenant по умолчанию | Динамически |

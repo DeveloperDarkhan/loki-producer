@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -27,15 +29,22 @@ func main() {
 
 	var (
 		targetURL      = flag.String("url", "http://localhost:3101/loki/api/v1/push", "Distributor push URL")
-		tenant         = flag.String("tenant", "canary", "Tenant ID")
+		tenant         = flag.String("tenant", "canary", "Tenant ID (used when -tenants=1)")
+		tenantPrefix   = flag.String("tenant-prefix", "canary", "Tenant prefix for multi-tenant mode")
+		tenants        = flag.Int("tenants", 1, "Number of distinct tenants (>=1)")
 		rps            = flag.Float64("rps", 50, "Total requests per second")
 		concurrency    = flag.Int("concurrency", 4, "Concurrent workers")
 		linesPerStream = flag.Int("lines", 20, "Lines per stream")
 		streamsPerReq  = flag.Int("streams", 1, "Streams per request")
 		bodyFormat     = flag.String("format", "json", "Body format (only json supported)")
 		labelApp       = flag.String("label-app", "canary", "Label 'app' value")
+		labelExtra     = flag.String("label-extra", "", "Extra labels as k=v,k2=v2")
+		payloadBytes   = flag.Int("payload-bytes", 16, "Additional payload bytes per line")
 		runFor         = flag.Duration("duration", 0, "Run duration (0 = forever)")
 		jitterPct      = flag.Float64("jitter-pct", 0.10, "Inter-request sleep jitter fraction (0.10 = ±10%)")
+		useGzip        = flag.Bool("gzip", false, "Compress body with gzip")
+		httpTimeout    = flag.Duration("http-timeout", 15*time.Second, "HTTP client timeout")
+		logLevel       = flag.String("log-level", "info", "Log level: info|debug")
 	)
 	flag.Parse()
 
@@ -49,10 +58,25 @@ func main() {
 	}
 	interval := time.Duration(float64(time.Second) / perWorkerRPS)
 
-	log.Printf(`{"level":"info","msg":"canary start","url":%q,"tenant":%q,"rps":%.2f,"workers":%d,"interval_ms":%.2f,"streams_per_req":%d,"lines_per_stream":%d}`,
-		*targetURL, *tenant, *rps, *concurrency, float64(interval.Milliseconds()), *streamsPerReq, *linesPerStream)
+	log.Printf(`{"level":"info","msg":"canary start","url":%q,"tenant":%q,"tenants":%d,"rps":%.2f,"workers":%d,"interval_ms":%.2f,"streams_per_req":%d,"lines_per_stream":%d,"gzip":%t}`,
+		*targetURL, *tenant, *tenants, *rps, *concurrency, float64(interval.Milliseconds()), *streamsPerReq, *linesPerStream, *useGzip)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	// client := &http.Client{Timeout: *httpTimeout}
+	tr := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: *concurrency * 2,
+		MaxConnsPerHost:     *concurrency * 2,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  false,
+	}
+
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   *httpTimeout,
+	}
+
+	// parse extra labels
+	extra := parseLabels(*labelExtra)
 
 	var wg sync.WaitGroup
 	stopCh := make(chan struct{})
@@ -76,10 +100,29 @@ func main() {
 							time.Sleep(sleep)
 						}
 					}
-					body, size := makeBody(*streamsPerReq, *linesPerStream, *labelApp)
-					req, _ := http.NewRequest("POST", *targetURL, bytes.NewReader(body))
+					// pick tenant
+					tid := *tenant
+					if *tenants > 1 {
+						idx := rand.Intn(*tenants)
+						tid = fmt.Sprintf("%s-%d", strings.TrimSpace(*tenantPrefix), idx)
+					}
+					body, size := makeBody(*streamsPerReq, *linesPerStream, *labelApp, extra, *payloadBytes)
+					var reader io.Reader = bytes.NewReader(body)
+					var contentEncoding string
+					if *useGzip {
+						var buf bytes.Buffer
+						gz := gzip.NewWriter(&buf)
+						_, _ = gz.Write(body)
+						_ = gz.Close()
+						reader = &buf
+						contentEncoding = "gzip"
+					}
+					req, _ := http.NewRequest("POST", *targetURL, reader)
 					req.Header.Set("Content-Type", "application/json")
-					req.Header.Set("X-Scope-OrgID", *tenant)
+					if contentEncoding != "" {
+						req.Header.Set("Content-Encoding", contentEncoding)
+					}
+					req.Header.Set("X-Scope-OrgID", tid)
 					start := time.Now()
 					resp, err := client.Do(req)
 					lat := time.Since(start)
@@ -91,7 +134,9 @@ func main() {
 					if resp.StatusCode >= 300 {
 						log.Printf(`{"level":"warn","worker":%d,"status":%d,"lat_ms":%.2f,"bytes":%d}`, id, resp.StatusCode, lat.Seconds()*1000, size)
 					} else {
-						log.Printf(`{"level":"debug","worker":%d,"status":%d,"lat_ms":%.2f,"bytes":%d}`, id, resp.StatusCode, lat.Seconds()*1000, size)
+						if *logLevel == "debug" {
+							log.Printf(`{"level":"debug","worker":%d,"status":%d,"lat_ms":%.2f,"bytes":%d}`, id, resp.StatusCode, lat.Seconds()*1000, size)
+						}
 					}
 				}
 			}
@@ -108,7 +153,7 @@ func main() {
 	}
 }
 
-func makeBody(streams, lines int, app string) ([]byte, int) {
+func makeBody(streams, lines int, app string, extra map[string]string, payloadBytes int) ([]byte, int) {
 	req := pushRequest{Streams: make([]pushStream, 0, streams)}
 	now := time.Now()
 	for i := 0; i < streams; i++ {
@@ -120,13 +165,43 @@ func makeBody(streams, lines int, app string) ([]byte, int) {
 			},
 			Values: make([][2]string, 0, lines),
 		}
+		for k, v := range extra {
+			st.Stream[k] = v
+		}
 		for l := 0; l < lines; l++ {
 			ts := now.Add(time.Duration(l) * time.Millisecond).UnixNano()
-			line := fmt.Sprintf("canary line %d stream %d payload=%s", l, i, strings.Repeat("x", 16))
+			line := fmt.Sprintf("canary line %d stream %d payload=%s", l, i, strings.Repeat("x", max(0, payloadBytes)))
 			st.Values = append(st.Values, [2]string{fmt.Sprintf("%d", ts), line})
 		}
 		req.Streams = append(req.Streams, st)
 	}
 	b, _ := json.Marshal(req)
 	return b, len(b)
+}
+
+func parseLabels(s string) map[string]string {
+	res := map[string]string{}
+	if strings.TrimSpace(s) == "" {
+		return res
+	}
+	parts := strings.Split(s, ",")
+	for _, p := range parts {
+		kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+		if k != "" {
+			res[k] = v
+		}
+	}
+	return res
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

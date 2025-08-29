@@ -14,10 +14,11 @@ spec:
     metadata:
       labels:
         app: loki-producer
+        scrape/metrics: "true"
     spec:
       containers:
       - name: loki-producer
-        image: dockerdarkhan/loki-producer:v1.3.1
+        image: dockerdarkhan/loki-producer:v1.5.1
         imagePullPolicy: IfNotPresent
         args:
           - "-config.file=/config/config.yaml"

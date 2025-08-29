@@ -21,6 +21,11 @@ type Config struct {
 	KafkaBalancer     string        `yaml:"kafka_balancer"` // sticky|round_robin|hash
 	KafkaWriteTimeout time.Duration `yaml:"kafka_write_timeout"`
 
+	// Kafka writer batching
+	KafkaBatchTimeout time.Duration `yaml:"kafka_batch_timeout"` // how often to flush a batch
+	KafkaBatchSize    int           `yaml:"kafka_batch_size"`    // max messages per batch
+	KafkaBatchBytes   int           `yaml:"kafka_batch_bytes"`   // max bytes per batch
+
 	// Security
 	KafkaSASLEnabled           bool   `yaml:"kafka_sasl_enabled"`
 	KafkaSASLMechanism         string `yaml:"kafka_sasl_mechanism"` // scram-sha-512|scram-sha-256
@@ -62,6 +67,9 @@ var defaultConfig = Config{
 	KafkaRequiredAcks:               1,
 	KafkaBalancer:                   "sticky",
 	KafkaWriteTimeout:               10 * time.Second,
+	KafkaBatchTimeout:               200 * time.Millisecond,
+	KafkaBatchSize:                  100,
+	KafkaBatchBytes:                 200000,
 	KafkaSASLEnabled:                false,
 	KafkaSASLMechanism:              "scram-sha-512",
 	KafkaTLSEnabled:                 false,
@@ -146,6 +154,15 @@ func (c *Config) Validate() error {
 	if c.KafkaWriteTimeout <= 0 {
 		return errors.New("kafka_write_timeout must be > 0")
 	}
+	if c.KafkaBatchTimeout <= 0 {
+		return errors.New("kafka_batch_timeout must be > 0")
+	}
+	if c.KafkaBatchSize <= 0 {
+		return errors.New("kafka_batch_size must be > 0")
+	}
+	if c.KafkaBatchBytes <= 0 {
+		return errors.New("kafka_batch_bytes must be > 0")
+	}
 	if c.KafkaSASLEnabled {
 		switch strings.ToLower(strings.TrimSpace(c.KafkaSASLMechanism)) {
 		case "scram-sha-512", "scram-sha-256":
@@ -189,6 +206,9 @@ type ImmutableSubset struct {
 	KafkaRequiredAcks          int
 	KafkaBalancer              string
 	KafkaWriteTimeout          time.Duration
+	KafkaBatchTimeout          time.Duration
+	KafkaBatchSize             int
+	KafkaBatchBytes            int
 	KafkaSASLEnabled           bool
 	KafkaSASLMechanism         string
 	KafkaSASLUsername          string
@@ -205,6 +225,9 @@ func (c *Config) ImmutableSubset() ImmutableSubset {
 		KafkaRequiredAcks:          c.KafkaRequiredAcks,
 		KafkaBalancer:              c.KafkaBalancer,
 		KafkaWriteTimeout:          c.KafkaWriteTimeout,
+		KafkaBatchTimeout:          c.KafkaBatchTimeout,
+		KafkaBatchSize:             c.KafkaBatchSize,
+		KafkaBatchBytes:            c.KafkaBatchBytes,
 		KafkaSASLEnabled:           c.KafkaSASLEnabled,
 		KafkaSASLMechanism:         c.KafkaSASLMechanism,
 		KafkaSASLUsername:          c.KafkaSASLUsername,
@@ -226,6 +249,9 @@ type RuntimeView struct {
 	KafkaRequiredAcks          int      `json:"kafka_required_acks"`
 	KafkaBalancer              string   `json:"kafka_balancer"`
 	KafkaWriteTimeout          string   `json:"kafka_write_timeout"`
+	KafkaBatchTimeout          string   `json:"kafka_batch_timeout"`
+	KafkaBatchSize             int      `json:"kafka_batch_size"`
+	KafkaBatchBytes            int      `json:"kafka_batch_bytes"`
 	KafkaSASLEnabled           bool     `json:"kafka_sasl_enabled"`
 	KafkaSASLMechanism         string   `json:"kafka_sasl_mechanism"`
 	KafkaSASLUsername          string   `json:"kafka_sasl_username"`
@@ -261,6 +287,9 @@ func (c Config) RuntimeView() RuntimeView {
 		KafkaRequiredAcks:          c.KafkaRequiredAcks,
 		KafkaBalancer:              c.KafkaBalancer,
 		KafkaWriteTimeout:          c.KafkaWriteTimeout.String(),
+		KafkaBatchTimeout:          c.KafkaBatchTimeout.String(),
+		KafkaBatchSize:             c.KafkaBatchSize,
+		KafkaBatchBytes:            c.KafkaBatchBytes,
 		KafkaSASLEnabled:           c.KafkaSASLEnabled,
 		KafkaSASLMechanism:         c.KafkaSASLMechanism,
 		KafkaSASLUsername:          c.KafkaSASLUsername,

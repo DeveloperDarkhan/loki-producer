@@ -28,6 +28,11 @@ type WriterConfig struct {
 	Balancer     string        // least_bytes|round_robin|hash|sticky (legacy)
 	WriteTimeout time.Duration // used for dialer timeout (connect) – actual write timeout handled by caller context
 
+	// Batching
+	BatchTimeout time.Duration // flush interval
+	BatchSize    int           // max messages per batch
+	BatchBytes   int           // max bytes per batch
+
 	// Security options
 	SASLEnabled           bool
 	SASLMechanism         string // scram-sha-512|scram-sha-256
@@ -122,6 +127,20 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 		Dial: netDialer.DialContext,
 	}
 
+	// Resolve batching with safe defaults if not provided
+	bt := cfg.BatchTimeout
+	if bt <= 0 {
+		bt = 200 * time.Millisecond
+	}
+	bs := cfg.BatchSize
+	if bs <= 0 {
+		bs = 100
+	}
+	bb := cfg.BatchBytes
+	if bb <= 0 {
+		bb = 200000
+	}
+
 	w := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
@@ -129,6 +148,10 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 		RequiredAcks: reqAcks,
 		Async:        false,
 		Transport:    tr,
+		// new tuning:
+		BatchTimeout: bt,
+		BatchSize:    bs,
+		BatchBytes:   int64(bb),
 	}
 
 	// Attach dialer with timeout if provided (>0)
@@ -141,7 +164,7 @@ func NewWriter(cfg WriterConfig) (*Writer, error) {
 	}() {
 		w.Logger = log.New(os.Stdout, "kafka.writer ", log.LstdFlags|log.Lmicroseconds)
 		w.ErrorLogger = log.New(os.Stderr, "kafka.writer.err ", log.LstdFlags|log.Lmicroseconds)
-		log.Printf("kafka debug enabled: topic=%s brokers=%s acks=%d balancer=%T tls=%t sasl=%t", cfg.Topic, strings.Join(cfg.Brokers, ","), cfg.RequiredAcks, balancer, cfg.TLSEnabled, cfg.SASLEnabled)
+		log.Printf("kafka debug enabled: topic=%s brokers=%s acks=%d balancer=%T tls=%t sasl=%t batchTimeout=%s batchSize=%d batchBytes=%d", cfg.Topic, strings.Join(cfg.Brokers, ","), cfg.RequiredAcks, balancer, cfg.TLSEnabled, cfg.SASLEnabled, w.BatchTimeout, w.BatchSize, w.BatchBytes)
 	}
 
 	return &Writer{w: w}, nil

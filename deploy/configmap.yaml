@@ -12,6 +12,11 @@ data:
     kafka_balancer: sticky
     kafka_write_timeout: 10s
 
+    # Kafka writer batching (controls producer flush behavior)
+    kafka_batch_timeout: 200ms   # flush interval; lower => lower latency, higher => better throughput
+    kafka_batch_size: 100        # max messages per batch; lower => lower latency, higher => larger batches
+    kafka_batch_bytes: 200000    # max bytes per batch; safeguard to avoid too-large requests
+
     # Security (optional)
     kafka_sasl_enabled: true
     kafka_sasl_mechanism: scram-sha-512
